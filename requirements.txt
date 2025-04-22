@@ -5,3 +5,5 @@ uvicorn
 pydantic
 psycopg2
 bcrypt
+PyJWT
+pydantic[email]

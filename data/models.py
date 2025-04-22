@@ -1,10 +1,9 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, List
-from sqlalchemy.sql import func
+from sqlalchemy import create_engine, Column, String, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from config import *
+from data.config import *
 
 Base = declarative_base()
 
@@ -12,7 +11,6 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
     id = Column(Text, primary_key=True)
-    token = Column(Text)
     name = Column(String(50))
     email = Column(String(40))
     password = Column(Text)
@@ -27,6 +25,13 @@ class UserCreate(BaseModel):
     name: str
     tag: str
     roles: str
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    tag: Optional[str] = None
+    email: Optional[EmailStr] = None
+    roles: Optional[str] = None
 
 
 class UserLogin(BaseModel):
