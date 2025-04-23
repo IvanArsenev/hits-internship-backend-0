@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from data.config import *
+from src.data.config import *
 
 Base = declarative_base()
 

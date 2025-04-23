@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 import uuid
 import uvicorn
 import jwt
-from data.models import *
+from src.data.models import *
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
