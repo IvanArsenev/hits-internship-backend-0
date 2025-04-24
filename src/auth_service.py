@@ -172,4 +172,4 @@ async def update_profile(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=API_HOST, port=API_PORT)
+    uvicorn.run(app, host=API_HOST, port=API_PORT_AUTH_SERVICE)
