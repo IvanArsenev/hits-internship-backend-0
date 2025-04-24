@@ -1,7 +1,7 @@
-from sqlalchemy import create_engine, Column, String, Boolean, Text
+from sqlalchemy import create_engine, Column, String, Boolean, Text, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 
 from src.data.config import *
 
@@ -15,23 +15,23 @@ class User(Base):
     email = Column(String(40))
     password = Column(Text)
     tag = Column(String(30))
-    roles = Column(String(50))
+    roles = Column(JSON, default=list)
     in_system = Column(Boolean, default=True, nullable=False)
 
 
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     name: str
     tag: str
-    roles: str
+    roles: List[str]
 
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     tag: Optional[str] = None
     email: Optional[EmailStr] = None
-    roles: Optional[str] = None
+    roles: Optional[List[str]] = None
 
 
 class UserLogin(BaseModel):

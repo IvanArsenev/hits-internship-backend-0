@@ -1,9 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
-from sqlalchemy.orm import Session, sessionmaker
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from src.data.models import *
-
+from auth_service import *
 app = FastAPI()
 
 app.add_middleware(
@@ -13,6 +8,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/students/")
+async def register(user: UserCreate, db: Session = Depends(get_db)):
+    pass
 
 if __name__ == "__main__":
     uvicorn.run(app, host=API_HOST, port=API_PORT_STUDENT_SERVICE)

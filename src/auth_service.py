@@ -81,7 +81,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    token_to_return = create_access_token(data={"user_id": db_user.id})
+    token_to_return = create_access_token(data={"user_id": db_user.id, "roles": db_user.roles})
 
     return {"msg": "User created", "token": token_to_return}
 
@@ -109,7 +109,7 @@ async def logout(user: User = Depends(get_current_user), db: Session = Depends(g
 
 @app.get("/token/")
 async def token(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    user_db = db.query(User).filter(user.token == User.token).first()
+    user_db = db.query(User).filter(User.id == user.id).first()
     if not user_db.in_system:
         raise HTTPException(status_code=403, detail="Unauthorised")
     return {"status_code": 200, "user_id": user_db.id}
