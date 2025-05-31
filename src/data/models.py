@@ -1,4 +1,4 @@
-"""Модели SQLAlchemy и Pydantic для пользователей и студентов."""
+"""SQLAlchemy and Pedantic models for users and students."""
 
 from typing import Optional, List
 
@@ -13,7 +13,7 @@ Base = declarative_base()
 
 
 class User(Base):
-    """SQLAlchemy модель пользователя системы."""
+    """SQLAlchemy is the user model of the system."""
 
     __tablename__ = "users"
     id = Column(Text, primary_key=True)
@@ -26,6 +26,8 @@ class User(Base):
 
 
 class Student(Base):
+    """SQLAlchemy is a student model of the system."""
+
     __tablename__ = "students"
     id = Column(Text, primary_key=True)
     name = Column(String(50))
@@ -39,6 +41,7 @@ class Student(Base):
 
 
 class UserCreate(BaseModel):
+    """User create model of the system."""
     email: EmailStr
     password: str
     name: str
@@ -47,6 +50,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    """User update model of the system."""
     name: Optional[str] = None
     tag: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -54,6 +58,7 @@ class UserUpdate(BaseModel):
 
 
 class StudentUpdate(BaseModel):
+    """Student update model of the system."""
     name: Optional[str] = None
     group: Optional[str] = None
     direction: Optional[str] = None
@@ -65,6 +70,7 @@ class StudentUpdate(BaseModel):
 
 
 class UserLogin(BaseModel):
+    """User login model of the system."""
     email: str
     password: str
 
