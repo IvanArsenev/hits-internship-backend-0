@@ -13,9 +13,11 @@ from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session
 
 from src.data.models import (
-    User, UserCreate, UserLogin, UserUpdate, Student, StudentUpdate,
-    engine, SECRET_KEY, ALGORITHM, API_HOST, API_PORT_AUTH_SERVICE
+    User, UserCreate, UserLogin, UserUpdate,
+    Student, StudentUpdate, engine
 )
+
+from src.data.config import SECRET_KEY, ALGORITHM, API_HOST, API_PORT_AUTH_SERVICE
 
 PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SESSION_LOCAL = Session(bind=engine, autoflush=False, autocommit=False)

@@ -1,14 +1,20 @@
+"""Модели SQLAlchemy и Pydantic для пользователей и студентов."""
+
+from typing import Optional, List
+
 from sqlalchemy import create_engine, Column, String, Boolean, Text, JSON, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
 
-from src.data.config import *
+from src.data.config import DATABASE_URL
+
 
 Base = declarative_base()
 
 
 class User(Base):
+    """SQLAlchemy модель пользователя системы."""
+
     __tablename__ = "users"
     id = Column(Text, primary_key=True)
     name = Column(String(50))
