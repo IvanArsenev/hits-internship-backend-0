@@ -197,8 +197,6 @@ async def update_profile(
         user_db.name = updated_data.name
     if updated_data.tag is not None:
         user_db.tag = updated_data.tag
-    if updated_data.roles is not None:
-        user_db.roles = updated_data.roles
     if updated_data.email is not None:
         existing_user = db.query(User).filter(
             User.email == updated_data.email, User.id != user.id
@@ -206,6 +204,20 @@ async def update_profile(
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
         user_db.email = updated_data.email
+
+    if updated_data.roles is not None:
+        prev_roles = set(user_db.roles or [])
+        new_roles = set(updated_data.roles)
+        user_db.roles = updated_data.roles
+
+        if 'student' in prev_roles and 'student' not in new_roles:
+            student_db = db.query(Student).filter(Student.id == user.id).first()
+            if student_db:
+                db.delete(student_db)
+        elif 'student' not in prev_roles and 'student' in new_roles:
+            existing = db.query(Student).filter(Student.id == user.id).first()
+            if not existing:
+                db.add(Student(id=user.id, name=user_db.name))
 
     db.commit()
     db.refresh(user_db)
