@@ -61,10 +61,10 @@ def decode_token(token_to_decode: str) -> Optional[str]:
     try:
         payload = jwt.decode(token_to_decode, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("user_id")
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=401, detail="Token expired") from exc
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
 
 
 def get_current_user(
@@ -75,8 +75,8 @@ def get_current_user(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    token = authorization.split("Bearer ")[-1]
-    user_id = decode_token(token)
+    access_token = authorization.split("Bearer ")[-1]
+    user_id = decode_token(access_token)
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
@@ -131,8 +131,8 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_student)
 
-    token = create_access_token({"user_id": db_user.id, "roles": db_user.roles})
-    return {"msg": "User created", "token": token}
+    access_token = create_access_token({"user_id": db_user.id, "roles": db_user.roles})
+    return {"msg": "User created", "token": access_token}
 
 
 @app.post("/login/")
