@@ -87,7 +87,10 @@ def get_current_user(
     return user
 
 
-def calculate_course_from_group(group_number: str, current_year: Optional[int] = None) -> Optional[int]:
+def calculate_course_from_group(
+    group_number: str,
+    current_year: Optional[int] = None
+) -> Optional[int]:
     """Calculate course from group number."""
     if not group_number or len(group_number) < 4:
         return None
@@ -278,7 +281,8 @@ async def get_students(
         "total": total,
         "skip": skip,
         "limit": limit,
-        "data": students
+        "data": students,
+        "curr_user_id": user.id
     }
 
 
