@@ -1,11 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Query
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import or_, and_, func, extract
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 import uuid
 import uvicorn
 import jwt
 from src.data.models import *
+from datetime import datetime
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -64,6 +66,27 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
     return user
 
 
+def calculate_course_from_group(group_number: str, current_year: int = None) -> int:
+    """
+    Вычисляет курс на основе номера группы.
+    Группа: 972202 → 3-4 цифры (22) - год поступления
+    Текущий год: 2025 → курс = 25 - 22 = 3
+    """
+    if not group_number or len(group_number) < 4:
+        return None
+
+    try:
+        admission_year = int(group_number[2:4])
+        current_year = current_year or datetime.now().year
+        current_short_year = current_year % 100
+        course = current_short_year - admission_year
+
+        # Проверяем, что курс получился разумным (от 1 до 6 обычно)
+        return course if 1 <= course <= 6 else None
+    except (ValueError, TypeError):
+        return None
+
+
 @app.post("/register/")
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(user.email == User.email).first():
@@ -82,7 +105,14 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
     token_to_return = create_access_token(data={"user_id": db_user.id, "roles": db_user.roles})
-
+    if 'student' in user.roles:
+        db_student = Student(
+            id=user_id,
+            name=user.name,
+        )
+        db.add(db_student)
+        db.commit()
+        db.refresh(db_student)
     return {"msg": "User created", "token": token_to_return}
 
 
@@ -168,6 +198,118 @@ async def update_profile(
             "name": user_db.name,
             "roles": user_db.roles
         }
+    }
+
+
+@app.put("/students_update/{student_id}")
+async def update_students_profile(
+    updated_data: StudentUpdate,
+    student_id,
+    db: Session = Depends(get_db)
+):
+    student_db = db.query(Student).filter(Student.id == student_id).first()
+
+    if not student_db:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if updated_data.name is not None:
+        student_db.name = updated_data.name
+
+    if updated_data.group is not None:
+        student_db.group = updated_data.group
+
+    if updated_data.direction is not None:
+        student_db.direction = updated_data.direction
+
+    if updated_data.stack is not None:
+        student_db.stack = updated_data.stack
+
+    if updated_data.applications_count is not None:
+        student_db.applications_count = updated_data.applications_count
+
+    if updated_data.status is not None:
+        student_db.status = updated_data.status
+
+    if updated_data.score is not None:
+        student_db.score = updated_data.score
+
+    if updated_data.current_score is not None:
+        student_db.current_score = updated_data.current_score
+
+    db.commit()
+    db.refresh(student_db)
+
+    return {
+        "msg": "Profile updated!",
+        "student": {
+            "id": student_db.id,
+            "name": student_db.name,
+            "group": student_db.group,
+            "direction": student_db.direction,
+            "stack": student_db.stack,
+            "applications_count": student_db.applications_count,
+            "status": student_db.status,
+            "score": student_db.score,
+            "current_score": student_db.current_score,
+        }
+    }
+
+
+@app.get("/students/")
+async def students(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+        course: Optional[str] = Query(None),
+        name: Optional[str] = None,
+        group: Optional[str] = Query(None),
+        skip: int = 0,
+        limit: int = 10
+):
+    query = db.query(Student)
+
+    if name:
+        query = query.filter(Student.name.ilike(f"%{name}%"))
+
+    if group:
+        groups_list = [int(group.strip()) for group in group.split(",") if group.strip().isdigit()]
+        group_conditions = []
+        for g in groups_list:
+            group_conditions.append(
+                and_(
+                    Student.group == g,
+                )
+            )
+
+        if group_conditions:
+            query = query.filter(or_(*group_conditions))
+
+    if course:
+        courses_list = [int(course.strip()) for course in course.split(",") if course.strip().isdigit()]
+
+        current_year = datetime.now().year
+        course_conditions = []
+
+        for c in courses_list:
+            expected_admission_year = (current_year % 100) - int(c)
+            course_conditions.append(
+                and_(
+                    func.substr(Student.group, 3, 2) == f"{expected_admission_year:02d}",
+                    func.length(Student.group) >= 4
+                )
+            )
+
+        if course_conditions:
+            query = query.filter(or_(*course_conditions))
+
+    total = query.count()
+
+    students = query.offset(skip).limit(limit).all()
+
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "data": students
     }
 
 
