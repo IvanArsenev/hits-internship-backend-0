@@ -1,16 +1,25 @@
+"""Auth service using FastAPI"""
+
+import uuid
+from datetime import datetime
+from typing import Optional
+
+import jwt
+import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, Header, Query
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy import or_, and_, func, extract
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
-import uuid
-import uvicorn
-import jwt
-from src.data.models import *
-from datetime import datetime
+from sqlalchemy import or_, and_, func
+from sqlalchemy.orm import Session
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from src.data.models import (
+    User, UserCreate, UserLogin, UserUpdate, Student, StudentUpdate,
+    engine, SECRET_KEY, ALGORITHM, API_HOST, API_PORT_AUTH_SERVICE
+)
+
+PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
+SESSION_LOCAL = Session(bind=engine, autoflush=False, autocommit=False)
+
 app = FastAPI()
 
 app.add_middleware(
@@ -23,7 +32,8 @@ app.add_middleware(
 
 
 def get_db():
-    db = SessionLocal()
+    """Dependency for DB session."""
+    db = SESSION_LOCAL
     try:
         yield db
     finally:
@@ -31,107 +41,116 @@ def get_db():
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """Hash the given password."""
+    return PWD_CONTEXT.hash(password)
 
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash."""
+    return PWD_CONTEXT.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict):
+def create_access_token(data: dict) -> str:
+    """Create a JWT token."""
     to_encode = data.copy()
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def decode_token(token_to_decode: str):
+def decode_token(token_to_decode: str) -> Optional[str]:
+    """Decode a JWT token."""
     try:
         payload = jwt.decode(token_to_decode, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("user_id")
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except Exception:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)):
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> User:
+    """Dependency to get current authenticated user."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid token")
-    token_from_request = authorization.split("Bearer ")[-1]
-    decoded_token = decode_token(token_from_request)
-    user = db.query(User).filter(decoded_token == User.id).first()
+
+    token = authorization.split("Bearer ")[-1]
+    user_id = decode_token(token)
+    user = db.query(User).filter(User.id == user_id).first()
+
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
     if not user.in_system:
         raise HTTPException(status_code=403, detail="Unauthorised")
+
     return user
 
 
-def calculate_course_from_group(group_number: str, current_year: int = None) -> int:
-    """
-    Вычисляет курс на основе номера группы.
-    Группа: 972202 → 3-4 цифры (22) - год поступления
-    Текущий год: 2025 → курс = 25 - 22 = 3
-    """
+def calculate_course_from_group(group_number: str, current_year: Optional[int] = None) -> Optional[int]:
+    """Calculate course from group number."""
     if not group_number or len(group_number) < 4:
         return None
 
     try:
         admission_year = int(group_number[2:4])
         current_year = current_year or datetime.now().year
-        current_short_year = current_year % 100
-        course = current_short_year - admission_year
-
-        # Проверяем, что курс получился разумным (от 1 до 6 обычно)
+        course = (current_year % 100) - admission_year
         return course if 1 <= course <= 6 else None
     except (ValueError, TypeError):
         return None
 
 
 @app.post("/register/")
-async def register(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(user.email == User.email).first():
+async def register(user_data: UserCreate, db: Session = Depends(get_db)):
+    """Register a new user."""
+    if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(status_code=400, detail="User with this email already exists")
 
     user_id = str(uuid.uuid4())
+    hashed_pw = hash_password(user_data.password)
+
     db_user = User(
         id=user_id,
-        email=user.email,
-        password=hash_password(user.password),
-        name=user.name,
-        tag=user.tag,
-        roles=user.roles,
+        email=user_data.email,
+        password=hashed_pw,
+        name=user_data.name,
+        tag=user_data.tag,
+        roles=user_data.roles,
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    token_to_return = create_access_token(data={"user_id": db_user.id, "roles": db_user.roles})
-    if 'student' in user.roles:
-        db_student = Student(
-            id=user_id,
-            name=user.name,
-        )
+
+    if 'student' in user_data.roles:
+        db_student = Student(id=user_id, name=user_data.name)
         db.add(db_student)
         db.commit()
         db.refresh(db_student)
-    return {"msg": "User created", "token": token_to_return}
+
+    token = create_access_token({"user_id": db_user.id, "roles": db_user.roles})
+    return {"msg": "User created", "token": token}
 
 
 @app.post("/login/")
-async def login(user: UserLogin, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user.email).first()
-    if not existing_user or not verify_password(user.password, existing_user.password):
+async def login(user_data: UserLogin, db: Session = Depends(get_db)):
+    """User login endpoint."""
+    user = db.query(User).filter(User.email == user_data.email).first()
+
+    if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=400, detail="Invalid data")
 
-    existing_user.token = create_access_token(data={"user_id": existing_user.id})
-    existing_user.in_system = True
+    user.token = create_access_token({"user_id": user.id})
+    user.in_system = True
     db.commit()
-    db.refresh(existing_user)
+    db.refresh(user)
 
-    return {"msg": "Success", "token": existing_user.token}
+    return {"msg": "Success", "token": user.token}
 
 
 @app.post("/logout/")
 async def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Log out user."""
     user.in_system = False
     db.commit()
     return {"msg": "Success"}
@@ -139,6 +158,7 @@ async def logout(user: User = Depends(get_current_user), db: Session = Depends(g
 
 @app.get("/token/")
 async def token(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get token status."""
     user_db = db.query(User).filter(User.id == user.id).first()
     if not user_db.in_system:
         raise HTTPException(status_code=403, detail="Unauthorised")
@@ -146,18 +166,15 @@ async def token(user: User = Depends(get_current_user), db: Session = Depends(ge
 
 
 @app.get("/profile/")
-async def profile(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    user_db = db.query(User).filter(User.id == user.id).first()
-    if not user_db.in_system:
-        raise HTTPException(status_code=403, detail="Unauthorised")
-    return_data = {
+async def profile(user: User = Depends(get_current_user)):
+    """Get user profile."""
+    return {
         "email": user.email,
         "id": user.id,
         "tag": user.tag,
         "name": user.name,
         "roles": user.roles
     }
-    return return_data
 
 
 @app.put("/profile/")
@@ -166,22 +183,21 @@ async def update_profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Update user profile."""
     user_db = db.query(User).filter(User.id == user.id).first()
-
     if not user_db or not user_db.in_system:
         raise HTTPException(status_code=403, detail="Unauthorised")
 
     if updated_data.name is not None:
         user_db.name = updated_data.name
-
     if updated_data.tag is not None:
         user_db.tag = updated_data.tag
-
     if updated_data.roles is not None:
         user_db.roles = updated_data.roles
-
     if updated_data.email is not None:
-        existing_user = db.query(User).filter(User.email == updated_data.email, User.id != user.id).first()
+        existing_user = db.query(User).filter(
+            User.email == updated_data.email, User.id != user.id
+        ).first()
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
         user_db.email = updated_data.email
@@ -204,105 +220,58 @@ async def update_profile(
 @app.put("/students_update/{student_id}")
 async def update_students_profile(
     updated_data: StudentUpdate,
-    student_id,
+    student_id: str,
     db: Session = Depends(get_db)
 ):
+    """Update student profile by ID."""
     student_db = db.query(Student).filter(Student.id == student_id).first()
-
     if not student_db:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    if updated_data.name is not None:
-        student_db.name = updated_data.name
-
-    if updated_data.group is not None:
-        student_db.group = updated_data.group
-
-    if updated_data.direction is not None:
-        student_db.direction = updated_data.direction
-
-    if updated_data.stack is not None:
-        student_db.stack = updated_data.stack
-
-    if updated_data.applications_count is not None:
-        student_db.applications_count = updated_data.applications_count
-
-    if updated_data.status is not None:
-        student_db.status = updated_data.status
-
-    if updated_data.score is not None:
-        student_db.score = updated_data.score
-
-    if updated_data.current_score is not None:
-        student_db.current_score = updated_data.current_score
+    for field, value in updated_data.dict(exclude_unset=True).items():
+        setattr(student_db, field, value)
 
     db.commit()
     db.refresh(student_db)
 
-    return {
-        "msg": "Profile updated!",
-        "student": {
-            "id": student_db.id,
-            "name": student_db.name,
-            "group": student_db.group,
-            "direction": student_db.direction,
-            "stack": student_db.stack,
-            "applications_count": student_db.applications_count,
-            "status": student_db.status,
-            "score": student_db.score,
-            "current_score": student_db.current_score,
-        }
-    }
+    return {"msg": "Profile updated!", "student": student_db}
 
 
 @app.get("/students/")
-async def students(
-        user: User = Depends(get_current_user),
-        db: Session = Depends(get_db),
-        course: Optional[str] = Query(None),
-        name: Optional[str] = None,
-        group: Optional[str] = Query(None),
-        skip: int = 0,
-        limit: int = 10
+async def get_students(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    course: Optional[str] = Query(None),
+    name: Optional[str] = None,
+    group: Optional[str] = Query(None),
+    skip: int = 0,
+    limit: int = 10
 ):
+    """Retrieve students with optional filters."""
     query = db.query(Student)
 
     if name:
         query = query.filter(Student.name.ilike(f"%{name}%"))
 
     if group:
-        groups_list = [int(group.strip()) for group in group.split(",") if group.strip().isdigit()]
-        group_conditions = []
-        for g in groups_list:
-            group_conditions.append(
-                and_(
-                    Student.group == g,
-                )
-            )
-
-        if group_conditions:
-            query = query.filter(or_(*group_conditions))
+        group_ids = [int(g.strip()) for g in group.split(",") if g.strip().isdigit()]
+        if group_ids:
+            query = query.filter(Student.group.in_(group_ids))
 
     if course:
-        courses_list = [int(course.strip()) for course in course.split(",") if course.strip().isdigit()]
-
-        current_year = datetime.now().year
-        course_conditions = []
-
-        for c in courses_list:
-            expected_admission_year = (current_year % 100) - int(c)
-            course_conditions.append(
+        course_ids = [int(c.strip()) for c in course.split(",") if c.strip().isdigit()]
+        year_now = datetime.now().year % 100
+        if course_ids:
+            course_filters = [
                 and_(
-                    func.substr(Student.group, 3, 2) == f"{expected_admission_year:02d}",
+                    func.substr(Student.group, 3, 2) == f"{year_now - c:02d}",
                     func.length(Student.group) >= 4
                 )
-            )
-
-        if course_conditions:
-            query = query.filter(or_(*course_conditions))
+                for c in course_ids
+            ]
+            query = query.filter(or_(*course_filters))
 
     total = query.count()
-
     students = query.offset(skip).limit(limit).all()
 
     return {
