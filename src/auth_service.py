@@ -35,6 +35,7 @@ app.add_middleware(
 
 
 def custom_openapi():
+    """Function to generate custom swagger."""
     if app.openapi_schema:
         return app.openapi_schema
     openapi_schema = get_openapi(
